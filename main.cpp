@@ -31,15 +31,16 @@ public:
   void SetUpMessageHandler(RefPtr<Glib::MainLoop> & main_loop) {
       cout << __FUNCTION__ << ": Add lambda slot for error or eos on bus" << endl;
       pipeline->get_bus()->add_watch([main_loop] (const RefPtr<Bus>&, const RefPtr<Message>& message) {
-          cout << __FUNCTION__ << ": Message received " << endl;
+          Glib::ustring message_name = Enums::get_name(message->get_message_type());
+          cout << "Message Handler: Message received: " << message_name << endl;
           switch (message->get_message_type())
           {
           case MessageType::MESSAGE_EOS:
-              cout << __FUNCTION__ << ": Got eos, stopping message loop" << endl;
+              cout << "Message Handler: Got " << message_name << ", stopping message loop" << endl;
               main_loop->quit();
               break;
           case MessageType::MESSAGE_ERROR:
-              cout << __FUNCTION__ << ": Got error, stopping message loop" << endl;
+              cout << "Message Handler: Got " << message_name << ", stopping message loop" << endl;
               main_loop->quit();
               break;
           default:
@@ -52,15 +53,15 @@ public:
   void ListenForPads() {
       cout << __FUNCTION__ << ": Add lambda slot for new pad on decodebin" << endl;
       decodebin->signal_pad_added().connect([&] (const RefPtr<Pad>& pad) {
-          cout << __FUNCTION__ << ": Pad added to : " << decodebin->get_name() << endl;
-          cout << __FUNCTION__ << ": Pad added    : " << pad->get_name() << endl;
+          cout << "PadListener: Pad added to : " << decodebin->get_name() << endl;
+          cout << "PadListener: Pad added    : " << pad->get_name() << endl;
 
           PadLinkReturn ret = pad->link(sink->get_static_pad("sink"));
 
           if (ret != PadLinkReturn::PAD_LINK_OK)
-              cout << __FUNCTION__ << ": Pads could not be linked : " << ret << endl;
+              cout << "PadListener: Pads could not be linked : " << ret << endl;
           else
-              cout << __FUNCTION__ << ": Pads linked " << endl;
+              cout << "PadListener: Pads linked " << endl;
       });
 
   }
