@@ -8,4 +8,5 @@ include_directories(${GSTMM_INCLUDE_DIRS})
 link_directories(${GSTMM_LIBRARY_DIRS})
 
 add_executable(${PROJECT_NAME} main.cpp)
+target_link_libraries(${PROJECT_NAME} ${GSTMM_LIBRARIES})
 
