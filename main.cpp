@@ -1,5 +1,6 @@
 #include <iostream>
 #include <future>
+#include <fstream>
 
 #include <gstreamermm.h>
 #include <glibmm/main.h>
@@ -108,19 +109,29 @@ int main(int argc, char *argv[])
     cout << __FUNCTION__ << ": Start Pipeline" << endl;
     pipeline_container.StartPipeline();
 
-    auto reader_handle = std::async(std::launch::async, [] () {
-        cout << " Reader started " << endl;
+    auto sink_reader_handle = async(launch::async, [] () {
+        cout << " Sink Reader started " << endl;
+
+        ofstream pipeline_output;
+        pipeline_output.open ("pipeline_output.bin", ios::out | ios::app | ios::binary);
     });
 
-    auto writer_handle = std::async(std::launch::async, [] () {
-        cout << " Writer started " << endl;
+    auto source_writer_handle = async(launch::async, [] () {
+        cout << " Source Writer started " << endl;
+
+        ifstream pipeline_input ("pipeline_input.mp4", ios::in|ios::binary);
+        if (!pipeline_input.is_open()) {
+            cout << " Could not open input file " << endl;
+            return;
+        }
+
     });
 
     cout << __FUNCTION__ << ": Start Message Loop" << endl;
     main_loop->run();
 
-    writer_handle.get();
-    reader_handle.get();
+    source_writer_handle.get();
+    sink_reader_handle.get();
 
     cout << __FUNCTION__ << ": Stop Pipeline" << endl;
     pipeline_container.StopPipeline();
