@@ -34,11 +34,11 @@ public:
           cout << __FUNCTION__ << ": Message received " << endl;
           switch (message->get_message_type())
           {
-          case Gst::MESSAGE_EOS:
+          case MessageType::MESSAGE_EOS:
               cout << __FUNCTION__ << ": Got eos, stopping message loop" << endl;
               main_loop->quit();
               break;
-          case Gst::MESSAGE_ERROR:
+          case MessageType::MESSAGE_ERROR:
               cout << __FUNCTION__ << ": Got error, stopping message loop" << endl;
               main_loop->quit();
               break;
@@ -57,7 +57,7 @@ public:
 
           PadLinkReturn ret = pad->link(sink->get_static_pad("sink"));
 
-          if (ret != Gst::PAD_LINK_OK)
+          if (ret != PadLinkReturn::PAD_LINK_OK)
               cout << __FUNCTION__ << ": Pads could not be linked : " << ret << endl;
           else
               cout << __FUNCTION__ << ": Pads linked " << endl;
@@ -67,12 +67,12 @@ public:
 
   void StartPipeline() {
       cout << __FUNCTION__ << ": Set Pipeline State to Playing " << endl;
-      pipeline->set_state(Gst::STATE_PLAYING);
+      pipeline->set_state(State::STATE_PLAYING);
   }
 
   void StopPipeline() {
       cout << __FUNCTION__ << ": Set Pipeline State to Null " << endl;
-      pipeline->set_state(Gst::STATE_NULL);
+      pipeline->set_state(State::STATE_NULL);
   }
 
 private:
