@@ -1,4 +1,5 @@
 #include <iostream>
+#include <future>
 
 #include <gstreamermm.h>
 #include <glibmm/main.h>
@@ -107,8 +108,19 @@ int main(int argc, char *argv[])
     cout << __FUNCTION__ << ": Start Pipeline" << endl;
     pipeline_container.StartPipeline();
 
+    auto reader_handle = std::async(std::launch::async, [] () {
+        cout << " Reader started " << endl;
+    });
+
+    auto writer_handle = std::async(std::launch::async, [] () {
+        cout << " Writer started " << endl;
+    });
+
     cout << __FUNCTION__ << ": Start Message Loop" << endl;
     main_loop->run();
+
+    writer_handle.get();
+    reader_handle.get();
 
     cout << __FUNCTION__ << ": Stop Pipeline" << endl;
     pipeline_container.StopPipeline();
