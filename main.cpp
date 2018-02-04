@@ -2,12 +2,30 @@
 #include <future>
 #include <fstream>
 
+#include <string.h>
+
 #include <gstreamermm.h>
 #include <glibmm/main.h>
 
 using namespace std;
 using namespace Gst;
 using Glib::RefPtr;
+
+const size_t read_block_size = (32*1024);
+
+static size_t getFileSize(const std::string &fileName)
+{
+  ifstream file(fileName.c_str(), ifstream::in | ifstream::binary);
+  size_t file_size = 0;
+
+  if(file.is_open()) {
+    file.seekg(0, ios::end);
+    file_size = file.tellg();
+    file.close();
+  }
+
+  return file_size;
+}
 
 class PipelineContainer
 {
@@ -78,8 +96,6 @@ public:
       pipeline->set_state(State::STATE_NULL);
   }
 
-private:
-
   RefPtr<Element> source;
   RefPtr<Element> decodebin;
   RefPtr<Element> sink;
@@ -88,6 +104,14 @@ private:
 
 int main(int argc, char *argv[])
 {
+  if (argc != 2) {
+    cout << __FUNCTION__ << ": You need to pass in the input filename" << endl;
+    return EXIT_FAILURE;
+  }
+
+  std::string fileName = argv[1];
+  cout << __FUNCTION__ << ": Input file " << fileName << endl;
+
     cout << __FUNCTION__ << ": Initialize GStreamer" << endl;
     Gst::init(argc, argv);
 
@@ -109,22 +133,63 @@ int main(int argc, char *argv[])
     cout << __FUNCTION__ << ": Start Pipeline" << endl;
     pipeline_container.StartPipeline();
 
-    auto sink_reader_handle = async(launch::async, [] () {
+  auto sink_reader_handle = async(launch::async, [&] () {
         cout << " Sink Reader started " << endl;
 
-        ofstream pipeline_output;
-        pipeline_output.open ("pipeline_output.bin", ios::out | ios::app | ios::binary);
+    RefPtr<AppSink> appsink = appsink.cast_static(pipeline_container.sink);
+
+    size_t num_samples = 0;
+
+    while (true) {
+      RefPtr<Buffer> buf_out;
+      RefPtr<Sample> sample = appsink->pull_sample();
+      if (sample) {
+        num_samples++;
+        cout << " Sink Reader: Got sample number : " << num_samples << endl;
+        buf_out = sample->get_buffer();
+      } else {
+        cout << " Sink Reader: No more samples, total number of samples " << num_samples << endl;
+        break;
+      }
+    }
     });
 
-    auto source_writer_handle = async(launch::async, [] () {
-        cout << " Source Writer started " << endl;
+  auto source_writer_handle = async(launch::async, [&] () {
+    cout << " Source Writer: async handler started " << endl;
 
-        ifstream pipeline_input ("pipeline_input.mp4", ios::in|ios::binary);
+    ifstream pipeline_input (fileName, ios::in|ios::binary);
         if (!pipeline_input.is_open()) {
             cout << " Could not open input file " << endl;
             return;
         }
 
+    size_t remaining_size = getFileSize(fileName);
+
+    cout << " Source Writer: file size " << remaining_size << endl;
+
+    FlowReturn flow = FLOW_OK;
+    RefPtr<AppSrc> appsrc = appsrc.cast_static(pipeline_container.source);
+
+    while (remaining_size > 0 && flow == FLOW_OK) {
+
+      size_t buf_size = min(remaining_size, read_block_size);
+      char src_buf[buf_size];
+
+      cout << " Source Writer: read " << buf_size << " remaining size " << remaining_size << endl;
+      pipeline_input.read(src_buf, buf_size);
+
+      RefPtr<Buffer> buf = Buffer::create(buf_size);
+
+      MapInfo map_info;
+      buf->map(map_info, MAP_WRITE);
+      memcpy(map_info.get_data(), src_buf, buf_size);
+      buf->unmap(map_info);
+
+      flow = appsrc->push_buffer(buf);
+      remaining_size -= buf_size;
+    }
+
+    flow = appsrc->end_of_stream();
     });
 
     cout << __FUNCTION__ << ": Start Message Loop" << endl;
@@ -135,5 +200,5 @@ int main(int argc, char *argv[])
 
     cout << __FUNCTION__ << ": Stop Pipeline" << endl;
     pipeline_container.StopPipeline();
-    return 0;
+  return EXIT_SUCCESS;
 }
