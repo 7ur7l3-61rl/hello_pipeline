@@ -37,12 +37,13 @@ public:
     pipeline = Pipeline::create();
 
     cout << __FUNCTION__ << ": Create Elements" << endl;
-    sink = ElementFactory::create_element("appsink", "sink");
+    video_sink = ElementFactory::create_element("appsink", "video_sink");
+    audio_sink = ElementFactory::create_element("appsink", "audio_sink");
     decodebin = ElementFactory::create_element("decodebin", "decoder");
     source = ElementFactory::create_element("appsrc", "source");
 
     cout << __FUNCTION__ << ": Add the Elements to the Pipeline" << endl;
-    pipeline->add(source)->add(decodebin)->add(sink);
+    pipeline->add(source)->add(decodebin)->add(video_sink)->add(audio_sink);
 
     cout << __FUNCTION__ << ": Link the source Element to the Decoder" << endl;
     source->link(decodebin);
@@ -70,13 +71,82 @@ public:
     });
   }
 
+  void printCaps(const RefPtr<Pad>& pad) {
+    cout << __FUNCTION__ << " ------------------------ " << endl;
+
+    if (pad->has_current_caps()) {
+
+      RefPtr<Caps> caps = pad->get_current_caps();
+
+      for (size_t i = 0; i < caps->size(); i++) {
+        const Gst::Structure structure = caps->get_structure(i);
+        cout << __FUNCTION__ << " Select structure at index " << i << " : " << structure.get_name() << endl;
+
+        for (size_t j = 0; j < structure.size(); j++) {
+          cout << __FUNCTION__ << " Select field at index " << j << endl;
+          Glib::ustring field_name = structure.get_nth_field_name(j);
+          cout << __FUNCTION__ << " Field name " << field_name << endl;
+        }
+
+        cout << __FUNCTION__ << " Structure at index " << structure.to_string() << endl;
+
+      }
+
+    } else {
+      cout << __FUNCTION__ << " Pad has no caps" << endl;
+    }
+
+    cout << __FUNCTION__ << " ------------------------ " << endl;
+  }
+
+  bool hasStructure(const RefPtr<Pad>& pad) {
+    if (!pad->has_current_caps())
+      return false;
+    RefPtr<Caps> caps = pad->get_current_caps();
+    if (caps->size() < 1)
+      return false;
+    return true;
+  }
+
+  Glib::ustring getName(const RefPtr<Pad>& pad) {
+    RefPtr<Caps> caps = pad->get_current_caps();
+    const Gst::Structure structure = caps->get_structure(0);
+    return structure.get_name();
+  }
+
+  bool isVideo(const RefPtr<Pad>& pad) {
+    if (!hasStructure(pad))
+      return false;
+    Glib::ustring name = getName(pad);
+    return name == "video/x-raw";
+  }
+
+  bool isAudio(const RefPtr<Pad>& pad) {
+    if (!hasStructure(pad))
+      return false;
+    Glib::ustring name = getName(pad);
+    return name == "audio/x-raw";
+  }
+
   void ListenForPads() {
     cout << __FUNCTION__ << ": Add lambda slot for new pad on decodebin" << endl;
     decodebin->signal_pad_added().connect([&] (const RefPtr<Pad>& pad) {
       cout << "PadListener: Pad added to : " << decodebin->get_name() << endl;
       cout << "PadListener: Pad added    : " << pad->get_name() << endl;
 
-      PadLinkReturn ret = pad->link(sink->get_static_pad("sink"));
+      printCaps(pad);
+
+      PadLinkReturn ret = PadLinkReturn::PAD_LINK_REFUSED;
+
+      if (isVideo(pad)) {
+        cout << "PadListener: Trying to link video pad : " << pad->get_name() << endl;
+        ret = pad->link(video_sink->get_static_pad("sink"));
+      } else if (isAudio(pad)) {
+        cout << "PadListener: Trying to link audio pad : " << pad->get_name() << endl;
+        ret = pad->link(audio_sink->get_static_pad("sink"));
+      } else {
+        cout << "PadListener: Unknown pad type : " << pad->get_name() << endl;
+      }
 
       if (ret != PadLinkReturn::PAD_LINK_OK)
         cout << "PadListener: Pads could not be linked : " << ret << endl;
@@ -98,7 +168,8 @@ public:
 
   RefPtr<Element> source;
   RefPtr<Element> decodebin;
-  RefPtr<Element> sink;
+  RefPtr<Element> audio_sink;
+  RefPtr<Element> video_sink;
   RefPtr<Pipeline> pipeline;
 };
 
@@ -133,10 +204,10 @@ int main(int argc, char *argv[])
   cout << __FUNCTION__ << ": Start Pipeline" << endl;
   pipeline_container.StartPipeline();
 
-  auto sink_reader_handle = async(launch::async, [&] () {
-    cout << " Sink Reader started " << endl;
+  auto video_sink_reader_handle = async(launch::async, [&] () {
+    cout << " Video Sink Reader started " << endl;
 
-    RefPtr<AppSink> appsink = appsink.cast_static(pipeline_container.sink);
+    RefPtr<AppSink> appsink = appsink.cast_static(pipeline_container.video_sink);
 
     size_t num_samples = 0;
 
@@ -145,10 +216,31 @@ int main(int argc, char *argv[])
       RefPtr<Sample> sample = appsink->pull_sample();
       if (sample) {
         num_samples++;
-        cout << " Sink Reader: Got sample number : " << num_samples << endl;
+        cout << " Video Sink Reader: Got sample number : " << num_samples << endl;
         buf_out = sample->get_buffer();
       } else {
-        cout << " Sink Reader: No more samples, total number of samples " << num_samples << endl;
+        cout << " Video Sink Reader: No more samples, total number of samples " << num_samples << endl;
+        break;
+      }
+    }
+  });
+
+  auto audio_sink_reader_handle = async(launch::async, [&] () {
+    cout << " Audio Sink Reader started " << endl;
+
+    RefPtr<AppSink> appsink = appsink.cast_static(pipeline_container.audio_sink);
+
+    size_t num_samples = 0;
+
+    while (true) {
+      RefPtr<Buffer> buf_out;
+      RefPtr<Sample> sample = appsink->pull_sample();
+      if (sample) {
+        num_samples++;
+        cout << " Audio Sink Reader: Got sample number : " << num_samples << endl;
+        buf_out = sample->get_buffer();
+      } else {
+        cout << " Audio Sink Reader: No more samples, total number of samples " << num_samples << endl;
         break;
       }
     }
@@ -196,7 +288,8 @@ int main(int argc, char *argv[])
   main_loop->run();
 
   source_writer_handle.get();
-  sink_reader_handle.get();
+  video_sink_reader_handle.get();
+  audio_sink_reader_handle.get();
 
   cout << __FUNCTION__ << ": Stop Pipeline" << endl;
   pipeline_container.StopPipeline();
