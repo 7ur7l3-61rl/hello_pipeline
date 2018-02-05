@@ -198,6 +198,14 @@ public:
     });
   }
 
+  void ListenForSeekData() {
+    cout << __FUNCTION__ << ": Add lambda slot seek data on appsrc" << endl;
+    RefPtr<AppSrc> appsrc = appsrc.cast_static(source);
+    appsrc->signal_seek_data().connect([&] (guint64 offset) {
+      cout << "SeekData to offset " << offset << endl;
+      return false;
+    });
+  }
 
   void ListenForPads() {
     cout << __FUNCTION__ << ": Add lambda slot for new pad on decodebin" << endl;
@@ -285,6 +293,9 @@ int main(int argc, char *argv[])
 
   cout << __FUNCTION__ << ": Setup Listener for Enough Data on AppSrc" << endl;
   pipeline_container.ListenForEnoughData();
+
+  cout << __FUNCTION__ << ": Setup Listener for Seek Data on AppSrc" << endl;
+  pipeline_container.ListenForSeekData();
 
   cout << __FUNCTION__ << ": Start Pipeline" << endl;
   pipeline_container.StartPipeline();
