@@ -31,8 +31,28 @@ class PipelineContainer
 {
 public:
 
-  void Initialize()
+  PipelineContainer(std::string file_name) :
+    fileName(file_name),
+    pipeline_input(file_name, ios::in|ios::binary) {
+
+  }
+
+  bool Initialize()
   {
+    cout << __FUNCTION__ << ": Check file" << endl;
+    if (!pipeline_input.is_open()) {
+      cout << __FUNCTION__ << ": Could not open input file " << endl;
+      return false;
+    }
+
+    remaining_size = getFileSize(fileName);
+
+    cout << __FUNCTION__ << ": Check file size " << remaining_size << endl;
+    if (remaining_size <= 0) {
+      cout << __FUNCTION__ << ": Invalid input file size " << remaining_size << endl;
+      return false;
+    }
+
     cout << __FUNCTION__ << ": Create Pipeline" << endl;
     pipeline = Pipeline::create();
 
@@ -47,6 +67,8 @@ public:
 
     cout << __FUNCTION__ << ": Link the source Element to the Decoder" << endl;
     source->link(decodebin);
+
+    return true;
   }
 
   void SetUpMessageHandler(RefPtr<Glib::MainLoop> & main_loop) {
@@ -130,9 +152,41 @@ public:
 
   void ListenForDataNeeded() {
     cout << __FUNCTION__ << ": Add lambda slot need data on appsrc" << endl;
+    cout << __FUNCTION__ << ": file size " << remaining_size << endl;
+
     RefPtr<AppSrc> appsrc = appsrc.cast_static(source);
+
     appsrc->signal_need_data().connect([&] (guint bytes_needed) {
       cout << "NeedData: bytes needed : " << bytes_needed << endl;
+
+      size_t buf_size = min(remaining_size, size_t(bytes_needed));
+      char src_buf[buf_size];
+
+      cout << "NeedData: read " << buf_size << " remaining size " << remaining_size << endl;
+      pipeline_input.read(src_buf, buf_size);
+
+      cout << "NeedData: create buffer " << buf_size << endl;
+      RefPtr<Buffer> buf = Buffer::create(buf_size);
+
+      MapInfo map_info;
+      buf->map(map_info, MAP_WRITE);
+      cout << "NeedData: copy into buffer num bytes " << buf_size << endl;
+      memcpy(map_info.get_data(), src_buf, buf_size);
+      buf->unmap(map_info);
+
+      RefPtr<AppSrc> appsrc = appsrc.cast_static(source);
+
+      cout << "NeedData: push buffer with bytes " << buf_size << endl;
+      FlowReturn flow = appsrc->push_buffer(buf);
+
+      if(flow == FlowReturn::FLOW_OK)
+        cout << "NeedData: Push Buffer successful" << endl;
+      else
+        cout << "NeedData: Push Buffer failed" << endl;
+
+      remaining_size -= buf_size;
+
+      cout << "NeedData: remaining size " << remaining_size << endl;
     });
   }
 
@@ -188,6 +242,9 @@ public:
   RefPtr<Element> audio_sink;
   RefPtr<Element> video_sink;
   RefPtr<Pipeline> pipeline;
+  size_t remaining_size = 0;
+  std::string fileName;
+  ifstream pipeline_input;
 };
 
 int main(int argc, char *argv[])
@@ -207,10 +264,15 @@ int main(int argc, char *argv[])
   RefPtr<Glib::MainLoop> main_loop = Glib::MainLoop::create();
 
   cout << __FUNCTION__ << ": Create PipelineContainer" << endl;
-  PipelineContainer pipeline_container;
+  PipelineContainer pipeline_container(fileName);
 
   cout << __FUNCTION__ << ": Initialize PipelineContainer" << endl;
-  pipeline_container.Initialize();
+  bool successful = pipeline_container.Initialize();
+
+  if (!successful) {
+    cout << __FUNCTION__ << ": Pipeline initialization failed" << endl;
+    return EXIT_FAILURE;
+  }
 
   cout << __FUNCTION__ << ": Setup Message Handling" << endl;
   pipeline_container.SetUpMessageHandler(main_loop);
@@ -269,48 +331,9 @@ int main(int argc, char *argv[])
     }
   });
 
-  auto source_writer_handle = async(launch::async, [&] () {
-    cout << " Source Writer: async handler started " << endl;
-
-    ifstream pipeline_input (fileName, ios::in|ios::binary);
-    if (!pipeline_input.is_open()) {
-      cout << " Could not open input file " << endl;
-      return;
-    }
-
-    size_t remaining_size = getFileSize(fileName);
-
-    cout << " Source Writer: file size " << remaining_size << endl;
-
-    FlowReturn flow = FLOW_OK;
-    RefPtr<AppSrc> appsrc = appsrc.cast_static(pipeline_container.source);
-
-    while (remaining_size > 0 && flow == FLOW_OK) {
-
-      size_t buf_size = min(remaining_size, read_block_size);
-      char src_buf[buf_size];
-
-      cout << " Source Writer: read " << buf_size << " remaining size " << remaining_size << endl;
-      pipeline_input.read(src_buf, buf_size);
-
-      RefPtr<Buffer> buf = Buffer::create(buf_size);
-
-      MapInfo map_info;
-      buf->map(map_info, MAP_WRITE);
-      memcpy(map_info.get_data(), src_buf, buf_size);
-      buf->unmap(map_info);
-
-      flow = appsrc->push_buffer(buf);
-      remaining_size -= buf_size;
-    }
-
-    flow = appsrc->end_of_stream();
-  });
-
   cout << __FUNCTION__ << ": Start Message Loop" << endl;
   main_loop->run();
 
-  source_writer_handle.get();
   video_sink_reader_handle.get();
   audio_sink_reader_handle.get();
 
