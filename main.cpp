@@ -128,6 +128,23 @@ public:
     return name == "audio/x-raw";
   }
 
+  void ListenForDataNeeded() {
+    cout << __FUNCTION__ << ": Add lambda slot need data on appsrc" << endl;
+    RefPtr<AppSrc> appsrc = appsrc.cast_static(source);
+    appsrc->signal_need_data().connect([&] (guint bytes_needed) {
+      cout << "NeedData: bytes needed : " << bytes_needed << endl;
+    });
+  }
+
+  void ListenForEnoughData() {
+    cout << __FUNCTION__ << ": Add lambda slot enough data on appsrc" << endl;
+    RefPtr<AppSrc> appsrc = appsrc.cast_static(source);
+    appsrc->signal_enough_data().connect([&] () {
+      cout << "EnoughData" << endl;
+    });
+  }
+
+
   void ListenForPads() {
     cout << __FUNCTION__ << ": Add lambda slot for new pad on decodebin" << endl;
     decodebin->signal_pad_added().connect([&] (const RefPtr<Pad>& pad) {
@@ -200,6 +217,12 @@ int main(int argc, char *argv[])
 
   cout << __FUNCTION__ << ": Setup Listener for Pads on Decodebin" << endl;
   pipeline_container.ListenForPads();
+
+  cout << __FUNCTION__ << ": Setup Listener for Data Needed on AppSrc" << endl;
+  pipeline_container.ListenForDataNeeded();
+
+  cout << __FUNCTION__ << ": Setup Listener for Enough Data on AppSrc" << endl;
+  pipeline_container.ListenForEnoughData();
 
   cout << __FUNCTION__ << ": Start Pipeline" << endl;
   pipeline_container.StartPipeline();
